@@ -7,6 +7,10 @@ import threading
 import requests
 from datetime import datetime
 
+# Disable multitouch red-dot simulation (Ctrl+click / right-click)
+from kivy.config import Config
+Config.set("input", "mouse", "mouse,disable_multitouch")
+
 from dotenv import load_dotenv
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
@@ -204,6 +208,7 @@ class PickerScreen(Screen):
         )
         self.search_input.bind(focus=self._on_focus)
         self.search_input.bind(text=self._on_text_change)
+        self.search_input.bind(on_text_validate=self._on_enter)
         search_row.add_widget(self.search_input)
 
         # ── Dropdown list (hidden until focused) ───────────────────────────
@@ -314,66 +319,30 @@ class PickerScreen(Screen):
         self.no_result_label.opacity = 0
 
         for i, district in enumerate(districts):
-            row = BoxLayout(
-                orientation="horizontal",
-                size_hint_y=None, height=self._row_h,
-                padding=[dp(16), 0, dp(4), 0],
-            )
-            with row.canvas.before:
-                Color(1, 1, 1, 1)
-                row._bg = Rectangle(size=row.size, pos=row.pos)
-            row.bind(
-                size=lambda w, s: setattr(w._bg, "size", s),
-                pos=lambda w, p: setattr(w._bg, "pos", p),
-            )
-
-            lbl = Label(
+            btn = Button(
                 text=district,
                 font_size=fs(0.038),
                 color=(0.08, 0.10, 0.22, 1),
-                halign="left", valign="middle",
-                size_hint_x=1,
-            )
-            lbl.bind(size=lambda w, s: setattr(w, "text_size", s))
-
-            btn = Button(
-                background_color=(0, 0, 0, 0),
+                halign="left",
+                background_color=(1, 1, 1, 1),
                 background_normal="",
                 background_down="",
-                size_hint=(1, 1),
+                size_hint_y=None, height=self._row_h,
+                padding=[dp(16), 0],
             )
             btn.district_name = district
-            btn._row = row
-            btn._lbl = lbl
 
             def _on_press(b, *a):
                 if self._selected_btn and self._selected_btn != b:
-                    pr = self._selected_btn._row
-                    pr.canvas.before.clear()
-                    with pr.canvas.before:
-                        Color(1, 1, 1, 1)
-                        pr._bg = Rectangle(size=pr.size, pos=pr.pos)
-                    pr.bind(
-                        size=lambda w, s: setattr(w._bg, "size", s),
-                        pos=lambda w, p: setattr(w._bg, "pos", p),
-                    )
-                    self._selected_btn._lbl.color = (0.08, 0.10, 0.22, 1)
-                b._row.canvas.before.clear()
-                with b._row.canvas.before:
-                    Color(0.22, 0.51, 0.89, 1)
-                    b._row._bg = Rectangle(size=b._row.size, pos=b._row.pos)
-                b._row.bind(
-                    size=lambda w, s: setattr(w._bg, "size", s),
-                    pos=lambda w, p: setattr(w._bg, "pos", p),
-                )
-                b._lbl.color = (1, 1, 1, 1)
+                    self._selected_btn.background_color = (1, 1, 1, 1)
+                    self._selected_btn.color = (0.08, 0.10, 0.22, 1)
+                b.background_color = (0.22, 0.51, 0.89, 1)
+                b.color = (1, 1, 1, 1)
                 self._selected_btn = b
 
             btn.bind(on_press=_on_press)
             btn.bind(on_release=self._on_district_selected)
-            row.add_widget(lbl)
-            row.add_widget(btn)
-            self.results_layout.add_widget(row)
+            self.results_layout.add_widget(btn)
 
             if i < len(districts) - 1:
                 div = BoxLayout(size_hint_y=None, height=self._div_h)
@@ -385,6 +354,19 @@ class PickerScreen(Screen):
                     pos=lambda w, p: setattr(w._rect, "pos", p),
                 )
                 self.results_layout.add_widget(div)
+
+    def _on_enter(self, instance):
+        query    = instance.text.strip().lower()
+        filtered = NEPAL_DISTRICTS if query == "" else [
+            d for d in NEPAL_DISTRICTS if query in d.lower()
+        ]
+        if filtered:
+            app = App.get_running_app()
+            app.selected_district = filtered[0]
+            self.search_input.unbind(text=self._on_text_change)
+            self.search_input.text = filtered[0]
+            self.search_input.bind(text=self._on_text_change)
+            Clock.schedule_once(lambda dt: setattr(self.manager, "current", "fetch_loading"), 0.3)
 
     def _on_district_selected(self, btn):
         district = btn.district_name
@@ -524,33 +506,6 @@ class WeatherScreen(Screen):
             self._bg = Rectangle(size=Window.size, pos=(0, 0))
         root.bind(size=lambda w, s: setattr(self._bg, "size", s))
 
-        # ── "Change District" button ─────────────────────────────────────
-        back_h = sh(0.06)
-        back_container = FloatLayout(
-            size_hint=(None, None),
-            size=(sw(0.42), back_h),
-            pos_hint={"right": 0.97, "top": 0.985},
-        )
-        with back_container.canvas.before:
-            Color(0.0, 0.0, 0.0, 0.25)
-            back_container._rect = RoundedRectangle(
-                size=back_container.size, pos=back_container.pos, radius=[dp(10)]
-            )
-        back_container.bind(
-            size=lambda w, s: setattr(w._rect, "size", s),
-            pos=lambda w, p: setattr(w._rect, "pos", p),
-        )
-        back_btn = Button(
-            text="Change District",
-            font_size=fs(0.030),
-            color=(1, 1, 1, 0.9),
-            background_color=(0, 0, 0, 0),
-            background_normal="",
-            size_hint=(1, 1),
-        )
-        back_btn.bind(on_release=self._go_back)
-        back_container.add_widget(back_btn)
-
         scroll = ScrollView(
             size_hint=(1, 1), do_scroll_x=False,
         )
@@ -627,9 +582,22 @@ class WeatherScreen(Screen):
         inner.add_widget(self._label(f"Last updated: {now}", fs(0.028), (1, 1, 1, 0.45)))
         inner.add_widget(self._spacer(sh(0.03)))
 
+        # ── "Change District" button (inside scroll, at the bottom) ──────
+        back_btn = Button(
+            text="Change District",
+            font_size=fs(0.036),
+            color=(1, 1, 1, 1),
+            background_color=(0.22, 0.51, 0.89, 1),
+            background_normal="",
+            background_down="",
+            size_hint_y=None, height=sh(0.07),
+        )
+        back_btn.bind(on_release=self._go_back)
+        inner.add_widget(back_btn)
+        inner.add_widget(self._spacer(sh(0.04)))
+
         scroll.add_widget(inner)
         root.add_widget(scroll)
-        root.add_widget(back_container)
         self.add_widget(root)
 
     def _go_back(self, *args):
