@@ -661,13 +661,13 @@ class WeatherScreen(Screen):
         date_str = datetime.strptime(day_data["date"], "%Y-%m-%d").strftime("%A, %d %b")
         d        = day_data["day"]
         r, g, b, _ = bg_col
-        row_h    = sh(0.10)
+        row_h    = sh(0.13)
         pad      = sw(0.04)
         fsize    = fs(0.033)
 
         row = BoxLayout(
             orientation="horizontal", size_hint_y=None, height=row_h,
-            padding=[pad, pad * 0.3, pad, pad * 0.3],
+            padding=[pad, pad * 0.4, pad, pad * 0.4],
         )
         with row.canvas.before:
             Color(min(r + 0.05, 1), min(g + 0.05, 1), min(b + 0.12, 1), 0.45)
@@ -677,12 +677,14 @@ class WeatherScreen(Screen):
             pos=lambda w, p: setattr(w._rect, "pos", p),
         )
 
-        left = BoxLayout(orientation="vertical")
+        left = BoxLayout(orientation="vertical", spacing=dp(2))
         dl = Label(text=date_str, font_size=fsize, color=(1, 1, 1, 0.90),
-                   halign="left", valign="middle", bold=True)
+                   halign="left", valign="middle", bold=True,
+                   size_hint_y=None, height=fsize * 1.6)
         dl.bind(size=lambda w, s: setattr(w, "text_size", s))
         cl = Label(text=d["condition"]["text"], font_size=fsize * 0.85,
-                   color=(1, 1, 1, 0.60), halign="left", valign="middle")
+                   color=(1, 1, 1, 0.60), halign="left", valign="middle",
+                   size_hint_y=None, height=fsize * 1.4)
         cl.bind(size=lambda w, s: setattr(w, "text_size", s))
         left.add_widget(dl)
         left.add_widget(cl)
