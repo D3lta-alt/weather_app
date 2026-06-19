@@ -237,6 +237,8 @@ class PickerScreen(Screen):
             bar_color=(0.45, 0.60, 0.90, 1),
             bar_inactive_color=(0.65, 0.72, 0.88, 0.5),
             scroll_type=["bars", "content"],
+            scroll_distance=dp(15)
+            scroll_timeout=250,
         )
         self.results_layout = BoxLayout(
             orientation="vertical",
