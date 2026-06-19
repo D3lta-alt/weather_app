@@ -237,7 +237,7 @@ class PickerScreen(Screen):
             bar_color=(0.45, 0.60, 0.90, 1),
             bar_inactive_color=(0.65, 0.72, 0.88, 0.5),
             scroll_type=["bars", "content"],
-            scroll_distance=dp(15)
+            scroll_distance=dp(15),
             scroll_timeout=250,
         )
         self.results_layout = BoxLayout(
@@ -527,12 +527,12 @@ class WeatherScreen(Screen):
             fs(0.042), (0.85, 0.95, 1, 0.9)
         ))
         inner.add_widget(self._label(
-            f"{current['temp_c']:.0f}C",
+            f"{current['temp_c']:.0f}\u00b0C",
             fs(0.20), (1, 1, 1, 1), bold=True
         ))
         inner.add_widget(self._label(cond["text"],        fs(0.052), (1, 1, 1, 0.85)))
         inner.add_widget(self._label(
-            f"Feels like {current['feelslike_c']:.0f}C", fs(0.038), (1, 1, 1, 0.70)
+            f"Feels like {current['feelslike_c']:.0f}\u00b0C", fs(0.038), (1, 1, 1, 0.70)
         ))
         inner.add_widget(self._spacer(sh(0.01)))
 
@@ -692,7 +692,7 @@ class WeatherScreen(Screen):
         left.add_widget(cl)
 
         right = Label(
-            text=f"H:{d['maxtemp_c']:.0f}C  L:{d['mintemp_c']:.0f}C",
+            text=f"H:{d['maxtemp_c']:.0f}\u00b0C  L:{d['mintemp_c']:.0f}\u00b0C",
             font_size=fsize, color=(1, 1, 1, 0.90),
             halign="right", valign="middle", bold=True, size_hint_x=0.42,
         )
