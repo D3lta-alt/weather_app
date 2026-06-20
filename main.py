@@ -54,6 +54,16 @@ NEPAL_DISTRICTS = [
     "Taplejung", "Terhathum", "Udayapur",
 ]
 
+# Some district names collide with place names elsewhere in the world
+# (e.g. "Dolpa" also matches a location in Norway, "Rolpa" geocodes to a
+# village near Everest). For these, query WeatherAPI.com with exact
+# lat/lon coordinates instead of the free-text district name to avoid
+# ambiguous matches. Add more districts here as similar issues surface.
+DISTRICT_COORDS = {
+    "Rolpa": (28.3667, 82.5500),
+    "Dolpa": (28.9333, 82.9000),
+}
+
 # ── Responsive helpers ────────────────────────────────────────────────────────
 def sw(frac):
     return Window.width * frac
@@ -456,9 +466,14 @@ class FetchLoadingScreen(Screen):
         self.dots_label.text = patterns[self._dot_state]
 
     def _fetch_weather(self, district):
+        if district in DISTRICT_COORDS:
+            lat, lon = DISTRICT_COORDS[district]
+            location_param = f"{lat},{lon}"
+        else:
+            location_param = f"{district},Nepal"
         url = (
             f"https://api.weatherapi.com/v1/forecast.json"
-            f"?key={API_KEY}&q={district},Nepal&days=3&aqi=yes"
+            f"?key={API_KEY}&q={location_param}&days=4&aqi=yes"
         )
         threading.Thread(target=self._do_fetch, args=(url,), daemon=True).start()
 
@@ -564,7 +579,7 @@ class WeatherScreen(Screen):
 
         # ── 3-Day Forecast ───────────────────────────────────────────────
         inner.add_widget(self._section_title("3-Day Forecast"))
-        for day in forecast:
+        for day in forecast[1:4]:
             inner.add_widget(self._forecast_row(day, bg_col))
 
         # ── Sun & Moon ───────────────────────────────────────────────────
