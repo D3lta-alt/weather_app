@@ -89,6 +89,7 @@ def weather_color(code):
 class IntroScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._dot_clock = None      # track dots interval event
         self._build_ui()
 
     def _build_ui(self):
@@ -138,18 +139,41 @@ class IntroScreen(Screen):
         self.add_widget(layout)
 
     def on_enter(self):
-        self._start_animations()
-        # Show intro for 2 seconds then go to district picker
+        # Defer by one frame so pos_hint resolves before we read cartoon.y
+        Clock.schedule_once(self._start_animations, 0)
         Clock.schedule_once(self._go_to_picker, 2.2)
 
-    def _start_animations(self):
-        bob_up   = Animation(y=self.cartoon.y + dp(12), duration=0.9, t="in_out_sine")
-        bob_down = Animation(y=self.cartoon.y,           duration=0.9, t="in_out_sine")
-        bob_up.bind(on_complete=lambda *a: bob_down.start(self.cartoon))
-        bob_down.bind(on_complete=lambda *a: bob_up.start(self.cartoon))
-        bob_up.start(self.cartoon)
+    def on_leave(self):
+        # Cancel everything cleanly so re-entry starts fresh
+        Animation.cancel_all(self.cartoon)
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+            self._dot_clock = None
+
+    def _start_animations(self, dt):
+        # Cancel any leftover animations first (safety guard on re-entry)
+        Animation.cancel_all(self.cartoon)
+
+        # Capture baseline y AFTER layout has resolved
+        base_y = self.cartoon.y
+
+        def do_bob_up(*args):
+            anim = Animation(y=base_y + dp(12), duration=0.9, t="in_out_sine")
+            anim.bind(on_complete=do_bob_down)
+            anim.start(self.cartoon)
+
+        def do_bob_down(*args):
+            anim = Animation(y=base_y, duration=0.9, t="in_out_sine")
+            anim.bind(on_complete=do_bob_up)
+            anim.start(self.cartoon)
+
+        do_bob_up()
+
         self._dot_state = 0
-        Clock.schedule_interval(self._cycle_dots, 0.55)
+        # Always unschedule before scheduling to avoid accumulation on re-entry
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+        self._dot_clock = Clock.schedule_interval(self._cycle_dots, 0.55)
 
     def _cycle_dots(self, dt):
         patterns = ["* o o", "o * o", "o o *", "o * o"]
@@ -157,8 +181,10 @@ class IntroScreen(Screen):
         self.dots_label.text = patterns[self._dot_state]
 
     def _go_to_picker(self, dt):
-        Clock.unschedule(self._cycle_dots)
         Animation.cancel_all(self.cartoon)
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+            self._dot_clock = None
         self.manager.current = "picker"
 
 
@@ -398,6 +424,7 @@ class PickerScreen(Screen):
 class FetchLoadingScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._dot_clock = None      # track dots interval event
         self._build_ui()
 
     def _build_ui(self):
@@ -448,17 +475,43 @@ class FetchLoadingScreen(Screen):
         app = App.get_running_app()
         district = getattr(app, "selected_district", "Kathmandu")
         self.title_label.text = f"Getting weather for\n{district}..."
-        self._start_animations()
+        self.status_label.text = "Connecting to weather service..."
+        self.dots_label.text = "* o o"
+        # Defer by one frame so pos_hint resolves before we read cartoon.y
+        Clock.schedule_once(self._start_animations, 0)
         self._fetch_weather(district)
 
-    def _start_animations(self):
-        bob_up   = Animation(y=self.cartoon.y + dp(12), duration=0.9, t="in_out_sine")
-        bob_down = Animation(y=self.cartoon.y,           duration=0.9, t="in_out_sine")
-        bob_up.bind(on_complete=lambda *a: bob_down.start(self.cartoon))
-        bob_down.bind(on_complete=lambda *a: bob_up.start(self.cartoon))
-        bob_up.start(self.cartoon)
+    def on_leave(self):
+        # Cancel everything cleanly so re-entry starts fresh
+        Animation.cancel_all(self.cartoon)
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+            self._dot_clock = None
+
+    def _start_animations(self, dt):
+        # Cancel any leftover animations first (safety guard on re-entry)
+        Animation.cancel_all(self.cartoon)
+
+        # Capture baseline y AFTER layout has resolved
+        base_y = self.cartoon.y
+
+        def do_bob_up(*args):
+            anim = Animation(y=base_y + dp(12), duration=0.9, t="in_out_sine")
+            anim.bind(on_complete=do_bob_down)
+            anim.start(self.cartoon)
+
+        def do_bob_down(*args):
+            anim = Animation(y=base_y, duration=0.9, t="in_out_sine")
+            anim.bind(on_complete=do_bob_up)
+            anim.start(self.cartoon)
+
+        do_bob_up()
+
         self._dot_state = 0
-        Clock.schedule_interval(self._cycle_dots, 0.55)
+        # Always unschedule before scheduling to avoid accumulation on re-entry
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+        self._dot_clock = Clock.schedule_interval(self._cycle_dots, 0.55)
 
     def _cycle_dots(self, dt):
         patterns = ["* o o", "o * o", "o o *", "o * o"]
@@ -493,13 +546,118 @@ class FetchLoadingScreen(Screen):
     def _on_error(self, msg):
         self.status_label.text = f"Error: {msg}"
         self.dots_label.text = "Go back and try again"
-        Clock.unschedule(self._cycle_dots)
         Animation.cancel_all(self.cartoon)
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+            self._dot_clock = None
 
     def _go_to_weather(self):
-        Clock.unschedule(self._cycle_dots)
         Animation.cancel_all(self.cartoon)
+        if self._dot_clock is not None:
+            self._dot_clock.cancel()
+            self._dot_clock = None
         self.manager.current = "weather"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND EFFECT — Rain (dark clouds, falling rain, occasional lightning)
+# ═══════════════════════════════════════════════════════════════════════════════
+class RainBackground(FloatLayout):
+    """
+    Animated rain background. Draws dark cloud shapes near the top, a field
+    of falling rain streaks, and an occasional lightning flash across the
+    whole widget. Self-contained: schedules its own Clock callback on init
+    and must be stopped via stop() when its parent screen is torn down.
+    """
+
+    DROP_COUNT = 36
+    FLASH_MIN_INTERVAL = 4.0
+    FLASH_MAX_INTERVAL = 9.0
+    FLASH_DURATION = 0.15
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._drops = []
+        self._clouds = []
+        self._flash_color = None
+        self._flash_time_left = 0
+        self._next_flash_in = self._random_flash_gap()
+        self._build_canvas()
+        self.bind(size=self._on_resize, pos=self._on_resize)
+        self._clock_event = Clock.schedule_interval(self._update, 1 / 30)
+
+    # ── setup ───────────────────────────────────────────────────────────
+    def _random_flash_gap(self):
+        import random
+        return random.uniform(self.FLASH_MIN_INTERVAL, self.FLASH_MAX_INTERVAL)
+
+    def _build_canvas(self):
+        import random
+        w, h = (Window.width, Window.height)
+
+        with self.canvas:
+            # Dark storm clouds near the top
+            Color(0.10, 0.12, 0.19, 1)
+            for _ in range(3):
+                cx = random.uniform(0, w)
+                cy = h * random.uniform(0.82, 0.94)
+                cw = w * random.uniform(0.45, 0.65)
+                ch = h * random.uniform(0.07, 0.10)
+                self._clouds.append(
+                    (Ellipse(pos=(cx - cw / 2, cy - ch / 2), size=(cw, ch)), cx, cy, cw, ch)
+                )
+
+            # Rain streaks
+            Color(0.62, 0.71, 0.85, 0.55)
+            for _ in range(self.DROP_COUNT):
+                x = random.uniform(0, w)
+                y = random.uniform(0, h)
+                length = random.uniform(dp(10), dp(20))
+                speed = random.uniform(dp(220), dp(340))
+                drift = dp(18)
+                line = Line(points=[x, y, x - drift * 0.3, y - length], width=dp(1.2))
+                self._drops.append({
+                    "line": line, "x": x, "y": y,
+                    "length": length, "speed": speed, "drift": drift,
+                })
+
+            # Lightning flash overlay (covers full widget, normally invisible)
+            self._flash_color = Color(0.85, 0.90, 1, 0)
+            self._flash_rect = Rectangle(pos=self.pos, size=self.size)
+
+    def _on_resize(self, *args):
+        self._flash_rect.pos = self.pos
+        self._flash_rect.size = self.size
+
+    # ── animation loop ─────────────────────────────────────────────────
+    def _update(self, dt):
+        h = Window.height
+        for d in self._drops:
+            d["y"] -= d["speed"] * dt
+            d["x"] -= d["drift"] * dt * 0.3
+            if d["y"] < -d["length"]:
+                import random
+                d["y"] = h + random.uniform(0, dp(40))
+                d["x"] = random.uniform(0, Window.width)
+            d["line"].points = [
+                d["x"], d["y"],
+                d["x"] - d["drift"] * 0.3, d["y"] - d["length"],
+            ]
+
+        if self._flash_time_left > 0:
+            self._flash_time_left -= dt
+            progress = max(0.0, self._flash_time_left / self.FLASH_DURATION)
+            self._flash_color.a = 0.45 * progress
+        else:
+            self._next_flash_in -= dt
+            if self._next_flash_in <= 0:
+                self._flash_time_left = self.FLASH_DURATION
+                self._next_flash_in = self._random_flash_gap()
+
+    def stop(self):
+        if self._clock_event is not None:
+            Clock.unschedule(self._clock_event)
+            self._clock_event = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -507,8 +665,16 @@ class FetchLoadingScreen(Screen):
 # ═══════════════════════════════════════════════════════════════════════════════
 class WeatherScreen(Screen):
     def on_enter(self):
+        if getattr(self, "_bg_effect", None) is not None:
+            self._bg_effect.stop()
         self.clear_widgets()
         self._build_ui(App.get_running_app().weather_data)
+
+    def on_leave(self):
+        # Stop rain clock regardless of how the user exits this screen
+        if getattr(self, "_bg_effect", None) is not None:
+            self._bg_effect.stop()
+            self._bg_effect = None
 
     def _build_ui(self, data):
         current  = data["current"]
@@ -522,6 +688,12 @@ class WeatherScreen(Screen):
             Color(*bg_col)
             self._bg = Rectangle(size=Window.size, pos=(0, 0))
         root.bind(size=lambda w, s: setattr(self._bg, "size", s))
+
+        # ── Background effect layer (added behind everything else) ───────
+        self._bg_effect = None
+        if cond["code"] in range(1063, 1200):
+            self._bg_effect = RainBackground(size_hint=(1, 1), pos=(0, 0))
+            root.add_widget(self._bg_effect)
 
         scroll = ScrollView(
             size_hint=(1, 1), do_scroll_x=False,
@@ -618,6 +790,9 @@ class WeatherScreen(Screen):
         self.add_widget(root)
 
     def _go_back(self, *args):
+        if getattr(self, "_bg_effect", None) is not None:
+            self._bg_effect.stop()
+            self._bg_effect = None
         self.manager.current = "picker"
 
     # ── Helpers ──────────────────────────────────────────────────────────────
