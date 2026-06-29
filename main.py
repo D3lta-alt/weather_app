@@ -920,7 +920,7 @@ class PartlyCloudyBackground(FloatLayout):
         fc_y = cy_sun - dp(5)
         fc_s = dp(1.25)
         col, ellipses = self._cloud_ellipses(fc_x, fc_y, fc_s, (0.91, 0.94, 0.97, 0.96))
-        self._front_cloud = {"x": fc_x, "y": fc_y, "scale": fc_s, "col": col, "ellipses": ellipses}
+        self._front_cloud = {"x": fc_x, "y": fc_y, "scale": fc_s, "speed": dp(8), "col": col, "ellipses": ellipses}
 
         self._w, self._h = w, h
 
@@ -948,16 +948,9 @@ class PartlyCloudyBackground(FloatLayout):
             e.size = sz
 
     def _update(self, dt):
-        import math
-        self._t += dt
         for c in self._bg_clouds:
             self._update_cloud(c, dt)
-        # Front cloud drifts more slowly
-        fc = self._front_cloud
-        fc["x"] += dp(8) * dt
-        if fc["x"] - fc["scale"] * 90 > self._w:
-            fc["x"] = -fc["scale"] * 90
-        self._update_cloud(fc, 0)   # pos already advanced; call with 0 dt to reposition ellipses
+        self._update_cloud(self._front_cloud, dt)
 
     def stop(self):
         if self._clock_event is not None:
