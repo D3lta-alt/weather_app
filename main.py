@@ -661,6 +661,403 @@ class RainBackground(FloatLayout):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND EFFECT — Sunny (bright sky, rotating sun with rays, pulsing glow)
+# ═══════════════════════════════════════════════════════════════════════════════
+class SunnyBackground(FloatLayout):
+    """
+    Animated sunny background. Draws a blue sky gradient via stacked rects,
+    a sun disc with a rotating ray group and a slow pulsing glow halo.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._clock_event = None
+        self._t = 0.0
+        self._build_canvas()
+        self.bind(size=self._rebuild, pos=self._rebuild)
+        self._clock_event = Clock.schedule_interval(self._update, 1 / 30)
+
+    def _build_canvas(self):
+        import math
+        w, h = Window.width, Window.height
+        cx, cy = w * 0.73, h * 0.82   # sun position (upper-right)
+        r = min(w, h) * 0.11           # core radius
+
+        with self.canvas:
+            # Sky gradient (three layered rects, light → mid blue)
+            Color(0.22, 0.58, 0.88, 1)
+            Rectangle(pos=(0, 0), size=(w, h))
+            Color(0.30, 0.68, 0.95, 0.55)
+            Rectangle(pos=(0, h * 0.45), size=(w, h * 0.55))
+            Color(0.42, 0.78, 1.0, 0.25)
+            Rectangle(pos=(0, h * 0.70), size=(w, h * 0.30))
+
+            # Outer glow (two translucent circles)
+            self._glow1_col = Color(1.0, 0.78, 0.28, 0.12)
+            self._glow1 = Ellipse(
+                pos=(cx - r * 1.9, cy - r * 1.9),
+                size=(r * 3.8, r * 3.8),
+            )
+            self._glow2_col = Color(1.0, 0.85, 0.45, 0.18)
+            self._glow2 = Ellipse(
+                pos=(cx - r * 1.4, cy - r * 1.4),
+                size=(r * 2.8, r * 2.8),
+            )
+
+            # Ray group — 10 lines, rotated each frame via a transform
+            self._ray_group_col = Color(1.0, 0.82, 0.20, 0.65)
+            self._rays = []
+            for i in range(10):
+                angle = (i / 10) * math.pi * 2
+                x1 = cx + math.cos(angle) * (r + dp(6))
+                y1 = cy + math.sin(angle) * (r + dp(6))
+                x2 = cx + math.cos(angle) * (r + dp(22))
+                y2 = cy + math.sin(angle) * (r + dp(22))
+                self._rays.append(
+                    Line(points=[x1, y1, x2, y2], width=max(1, dp(2.2)))
+                )
+
+            # Sun core
+            self._core_col = Color(1.0, 0.80, 0.22, 1)
+            self._core = Ellipse(
+                pos=(cx - r, cy - r), size=(r * 2, r * 2)
+            )
+
+        # Remember layout params for update loop
+        self._cx, self._cy, self._r = cx, cy, r
+
+    def _rebuild(self, *args):
+        """Full canvas rebuild on resize (rare but safe)."""
+        self.canvas.clear()
+        self._build_canvas()
+
+    def _update(self, dt):
+        import math
+        self._t += dt
+        t = self._t
+        cx, cy, r = self._cx, self._cy, self._r
+
+        # Rotate rays
+        rot = t * 0.15        # radians per second (slow crawl)
+        for i, line in enumerate(self._rays):
+            angle = (i / 10) * math.pi * 2 + rot
+            x1 = cx + math.cos(angle) * (r + dp(6))
+            y1 = cy + math.sin(angle) * (r + dp(6))
+            x2 = cx + math.cos(angle) * (r + dp(22))
+            y2 = cy + math.sin(angle) * (r + dp(22))
+            line.points = [x1, y1, x2, y2]
+
+        # Pulse the core radius
+        pulse = 1.0 + math.sin(t * 1.5) * 0.04
+        rp = r * pulse
+        self._core.pos = (cx - rp, cy - rp)
+        self._core.size = (rp * 2, rp * 2)
+
+        # Breathe glow alpha
+        glow_alpha = 0.10 + math.sin(t * 0.8) * 0.05
+        self._glow1_col.a = glow_alpha
+        self._glow2_col.a = glow_alpha + 0.06
+
+    def stop(self):
+        if self._clock_event is not None:
+            Clock.unschedule(self._clock_event)
+            self._clock_event = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND EFFECT — Cloudy (overcast sky, multiple drifting cloud layers)
+# ═══════════════════════════════════════════════════════════════════════════════
+class CloudyBackground(FloatLayout):
+    """
+    Animated overcast background. Four cloud blobs drift across the screen at
+    different speeds on a muted blue-grey sky.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._clock_event = None
+        self._clouds = []
+        self._build_canvas()
+        self.bind(size=self._rebuild, pos=self._rebuild)
+        self._clock_event = Clock.schedule_interval(self._update, 1 / 30)
+
+    # ── cloud blob helper ────────────────────────────────────────────────
+    @staticmethod
+    def _cloud_ellipses(canvas, cx, cy, scale, rgba):
+        """Draw a puffy cloud centred at (cx,cy) and return the Ellipse list."""
+        s = scale
+        col = Color(*rgba)
+        ellipses = [
+            Ellipse(pos=(cx - s*46, cy + s*10 - s*18), size=(s*92, s*36)),
+            Ellipse(pos=(cx - s*22, cy + s*0  - s*18), size=(s*52, s*40)),
+            Ellipse(pos=(cx - s*75, cy + s*0  - s*18), size=(s*42, s*30) if s else (0,0)),
+            Ellipse(pos=(cx + s*34, cy + s*4  - s*18), size=(s*44, s*32)),
+        ]
+        for e in ellipses:
+            canvas.add(e)
+        return col, ellipses
+
+    def _build_canvas(self):
+        import random
+        w, h = Window.width, Window.height
+
+        with self.canvas:
+            # Sky
+            Color(0.34, 0.38, 0.48, 1)
+            Rectangle(pos=(0, 0), size=(w, h))
+
+        # Four cloud definitions: (start_x_frac, y_frac, scale, speed_px_s, rgba)
+        defs = [
+            (-0.30, 0.80, dp(1.0), dp(28),  (0.36, 0.34, 0.32, 0.38)),
+            ( 1.10, 0.68, dp(1.4), dp(42),  (0.42, 0.38, 0.36, 0.46)),
+            ( 0.50, 0.74, dp(0.8), dp(18),  (0.33, 0.30, 0.29, 0.32)),
+            (-0.55, 0.60, dp(1.2), dp(35),  (0.38, 0.35, 0.33, 0.42)),
+        ]
+        for xf, yf, scale, speed, rgba in defs:
+            cx = w * xf
+            cy = h * yf
+            col, ellipses = self._cloud_ellipses(self.canvas, cx, cy, scale, rgba)
+            self._clouds.append({
+                "x": cx, "y": cy, "scale": scale,
+                "speed": speed, "col": col, "ellipses": ellipses, "rgba": rgba,
+            })
+
+    def _rebuild(self, *args):
+        self.canvas.clear()
+        self._clouds = []
+        self._build_canvas()
+
+    def _update(self, dt):
+        w = Window.width
+        for c in self._clouds:
+            c["x"] += c["speed"] * dt
+            if c["x"] - c["scale"] * 90 > w:
+                c["x"] = -c["scale"] * 90
+            s = c["scale"]
+            cx, cy = c["x"], c["y"]
+            offsets = [
+                ((-s*46, s*10 - s*18), (s*92, s*36)),
+                ((-s*22, s*0  - s*18), (s*52, s*40)),
+                ((-s*75, s*0  - s*18), (s*42, s*30)),
+                (( s*34, s*4  - s*18), (s*44, s*32)),
+            ]
+            for e, (dp_off, sz) in zip(c["ellipses"], offsets):
+                e.pos  = (cx + dp_off[0], cy + dp_off[1])
+                e.size = sz
+
+    def stop(self):
+        if self._clock_event is not None:
+            Clock.unschedule(self._clock_event)
+            self._clock_event = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND EFFECT — Partly Cloudy (sun behind drifting cloud)
+# ═══════════════════════════════════════════════════════════════════════════════
+class PartlyCloudyBackground(FloatLayout):
+    """
+    Blue sky with a visible sun (no rays) half-hidden behind a large white
+    cloud that drifts slowly across the upper portion of the screen.
+    Two smaller background clouds drift at different speeds below.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._clock_event = None
+        self._bg_clouds = []
+        self._front_cloud = []
+        self._t = 0.0
+        self._build_canvas()
+        self.bind(size=self._rebuild, pos=self._rebuild)
+        self._clock_event = Clock.schedule_interval(self._update, 1 / 30)
+
+    def _cloud_ellipses(self, cx, cy, scale, rgba):
+        s = scale
+        col = Color(*rgba)
+        ellipses = [
+            Ellipse(pos=(cx - s*46, cy + s*10 - s*18), size=(s*92, s*36)),
+            Ellipse(pos=(cx - s*22, cy + s*0  - s*18), size=(s*52, s*40)),
+            Ellipse(pos=(cx - s*75, cy + s*0  - s*18), size=(s*42, s*30)),
+            Ellipse(pos=(cx + s*34, cy + s*4  - s*18), size=(s*44, s*32)),
+        ]
+        for e in ellipses:
+            self.canvas.add(e)
+        return col, ellipses
+
+    def _build_canvas(self):
+        import math
+        w, h = Window.width, Window.height
+        cx_sun = w * 0.68
+        cy_sun = h * 0.82
+        r = min(w, h) * 0.10
+
+        with self.canvas:
+            # Blue sky
+            Color(0.29, 0.60, 0.84, 1)
+            Rectangle(pos=(0, 0), size=(w, h))
+
+            # Sun glow
+            Color(1.0, 0.78, 0.28, 0.20)
+            Ellipse(pos=(cx_sun - r*1.8, cy_sun - r*1.8), size=(r*3.6, r*3.6))
+            # Sun core
+            Color(1.0, 0.80, 0.22, 1)
+            self._sun = Ellipse(pos=(cx_sun - r, cy_sun - r), size=(r*2, r*2))
+
+        # Two background clouds
+        bg_defs = [
+            (w * -0.20, h * 0.60, dp(0.85), dp(20), (0.87, 0.91, 0.95, 0.50)),
+            (w *  0.80, h * 0.50, dp(0.65), dp(14), (0.87, 0.91, 0.95, 0.42)),
+        ]
+        for xf, yf, scale, speed, rgba in bg_defs:
+            col, ellipses = self._cloud_ellipses(xf, yf, scale, rgba)
+            self._bg_clouds.append({
+                "x": xf, "y": yf, "scale": scale, "speed": speed,
+                "col": col, "ellipses": ellipses,
+            })
+
+        # Front cloud (drifts in front of sun)
+        fc_x = w * 0.65
+        fc_y = cy_sun - dp(5)
+        fc_s = dp(1.25)
+        col, ellipses = self._cloud_ellipses(fc_x, fc_y, fc_s, (0.91, 0.94, 0.97, 0.96))
+        self._front_cloud = {"x": fc_x, "y": fc_y, "scale": fc_s, "col": col, "ellipses": ellipses}
+
+        self._w, self._h = w, h
+
+    def _rebuild(self, *args):
+        self.canvas.clear()
+        self._bg_clouds = []
+        self._front_cloud = []
+        self._build_canvas()
+
+    def _update_cloud(self, c, dt):
+        w = self._w
+        c["x"] += c["speed"] * dt
+        if c["x"] - c["scale"] * 90 > w:
+            c["x"] = -c["scale"] * 90
+        s = c["scale"]
+        cx, cy = c["x"], c["y"]
+        offsets = [
+            ((-s*46, s*10 - s*18), (s*92, s*36)),
+            ((-s*22, s*0  - s*18), (s*52, s*40)),
+            ((-s*75, s*0  - s*18), (s*42, s*30)),
+            (( s*34, s*4  - s*18), (s*44, s*32)),
+        ]
+        for e, (off, sz) in zip(c["ellipses"], offsets):
+            e.pos  = (cx + off[0], cy + off[1])
+            e.size = sz
+
+    def _update(self, dt):
+        import math
+        self._t += dt
+        for c in self._bg_clouds:
+            self._update_cloud(c, dt)
+        # Front cloud drifts more slowly
+        fc = self._front_cloud
+        fc["x"] += dp(8) * dt
+        if fc["x"] - fc["scale"] * 90 > self._w:
+            fc["x"] = -fc["scale"] * 90
+        self._update_cloud(fc, 0)   # pos already advanced; call with 0 dt to reposition ellipses
+
+    def stop(self):
+        if self._clock_event is not None:
+            Clock.unschedule(self._clock_event)
+            self._clock_event = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND EFFECT — Windy (blue-grey sky, sweeping curved wind lines)
+# ═══════════════════════════════════════════════════════════════════════════════
+class WindyBackground(FloatLayout):
+    """
+    Animated windy background. Muted blue-grey sky with sweeping curved
+    wind-streak lines that fade in at the left, cross the screen, and fade
+    out at the right — mimicking the HTML sceneWindy() behaviour.
+    """
+
+    STREAK_COUNT = 16
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._clock_event = None
+        self._streaks = []
+        self._build_canvas()
+        self.bind(size=self._rebuild, pos=self._rebuild)
+        self._clock_event = Clock.schedule_interval(self._update, 1 / 30)
+
+    def _build_canvas(self):
+        import random
+        w, h = Window.width, Window.height
+
+        with self.canvas:
+            # Sky
+            Color(0.42, 0.56, 0.68, 1)
+            Rectangle(pos=(0, 0), size=(w, h))
+
+            # Streaks
+            for _ in range(self.STREAK_COUNT):
+                life = random.random()          # 0..1 phase offset
+                y = random.uniform(dp(20), h - dp(20))
+                length = random.uniform(dp(30), dp(60))
+                speed = random.uniform(dp(90), dp(160))
+                x = random.uniform(-length, w)
+                col = Color(0.92, 0.96, 1.0, 0.0)
+                line = Line(
+                    points=[x, y, x + length * 0.5, y - dp(5), x + length, y],
+                    width=max(1, dp(1.4)),
+                )
+                self.canvas.add(col)
+                self.canvas.add(line)
+                self._streaks.append({
+                    "x": x, "y": y, "length": length, "speed": speed,
+                    "life": life, "col": col, "line": line,
+                })
+        self._w, self._h = w, h
+
+    def _rebuild(self, *args):
+        self.canvas.clear()
+        self._streaks = []
+        self._build_canvas()
+
+    def _update(self, dt):
+        import math
+        w = self._w
+        for s in self._streaks:
+            s["x"]    += s["speed"] * dt
+            s["life"] += dt * 0.55
+
+            # Wrap: reset once fully off right edge
+            if s["x"] > w + s["length"]:
+                import random
+                s["x"]    = -s["length"]
+                s["y"]    = random.uniform(dp(20), self._h - dp(20))
+                s["life"] = 0.0
+
+            # Fade in 0→0.2, full 0.2→0.8, fade out 0.8→1.2
+            lf = s["life"]
+            if lf < 0.2:
+                alpha = lf / 0.2
+            elif lf < 0.8:
+                alpha = 1.0
+            else:
+                alpha = max(0.0, 1.0 - (lf - 0.8) / 0.4)
+
+            s["col"].a = alpha * 0.42
+
+            x, y, ln = s["x"], s["y"], s["length"]
+            s["line"].points = [
+                x,            y,
+                x + ln * 0.5, y - dp(5),
+                x + ln,       y,
+            ]
+
+    def stop(self):
+        if self._clock_event is not None:
+            Clock.unschedule(self._clock_event)
+            self._clock_event = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SCREEN 4 — Weather Result
 # ═══════════════════════════════════════════════════════════════════════════════
 class WeatherScreen(Screen):
@@ -690,9 +1087,8 @@ class WeatherScreen(Screen):
         root.bind(size=lambda w, s: setattr(self._bg, "size", s))
 
         # ── Background effect layer (added behind everything else) ───────
-        self._bg_effect = None
-        if cond["code"] in range(1063, 1200):
-            self._bg_effect = RainBackground(size_hint=(1, 1), pos=(0, 0))
+        self._bg_effect = self._pick_bg_effect(cond["code"])
+        if self._bg_effect is not None:
             root.add_widget(self._bg_effect)
 
         scroll = ScrollView(
@@ -788,6 +1184,46 @@ class WeatherScreen(Screen):
         scroll.add_widget(inner)
         root.add_widget(scroll)
         self.add_widget(root)
+
+    # ── Background effect selector ────────────────────────────────────────────
+    @staticmethod
+    def _pick_bg_effect(code):
+        """
+        Map a WeatherAPI condition code to the appropriate background widget.
+
+        Code ranges (WeatherAPI):
+          1000            → clear / sunny
+          1003            → partly cloudy
+          1006, 1009      → cloudy / overcast
+          1030,1135,1147  → mist / fog / freezing fog  → windy-style
+          1063-1201       → any precipitation (drizzle, rain, sleet, snow-rain)
+          1204-1282       → snow, blizzard, thunder-snow → rain variant
+          Wind codes live in 1135-1147 but also we use windy for high-wind days;
+          since WeatherAPI doesn't have a standalone "windy" code we map fog/mist
+          to the windy background as a visually interesting fallback.
+        """
+        # Rain / drizzle / freezing drizzle / sleet / thunder
+        RAIN_CODES = set(range(1063, 1201)) | set(range(1201, 1283))
+        # Snow / blizzard share the rain class (dark sky + streaks look fine)
+        SNOW_CODES = set(range(1204, 1283))
+
+        # Sunny / clear
+        if code == 1000:
+            return SunnyBackground(size_hint=(1, 1), pos=(0, 0))
+        # Partly cloudy
+        if code == 1003:
+            return PartlyCloudyBackground(size_hint=(1, 1), pos=(0, 0))
+        # Cloudy / overcast
+        if code in (1006, 1009):
+            return CloudyBackground(size_hint=(1, 1), pos=(0, 0))
+        # Mist / fog / freezing fog → windy streaks
+        if code in (1030, 1135, 1147):
+            return WindyBackground(size_hint=(1, 1), pos=(0, 0))
+        # Any rain, drizzle, sleet, thunder, snow
+        if code in RAIN_CODES or code in SNOW_CODES:
+            return RainBackground(size_hint=(1, 1), pos=(0, 0))
+        # Fallback: no animated layer
+        return None
 
     def _go_back(self, *args):
         if getattr(self, "_bg_effect", None) is not None:
